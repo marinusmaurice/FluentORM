@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/demos/">
+    <Project Path="demos/FluentORM.Demos/FluentORM.Demos.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/FluentORM.Core/FluentORM.Core.csproj" />
+    <Project Path="src/FluentORM.Migrations/FluentORM.Migrations.csproj" />
+    <Project Path="src/FluentORM.Sqlite/FluentORM.Sqlite.csproj" />
+    <Project Path="src/FluentORM.SqlServer/FluentORM.SqlServer.csproj" />
+    <Project Path="src/FluentORM.Testing/FluentORM.Testing.csproj" />
+    <Project Path="src/FluentORM.Tools/FluentORM.Tools.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FluentORM.Core.Tests/FluentORM.Core.Tests.csproj" />
+    <Project Path="tests/FluentORM.Migrations.Tests/FluentORM.Migrations.Tests.csproj" />
+    <Project Path="tests/FluentORM.Sqlite.Tests/FluentORM.Sqlite.Tests.csproj" />
+    <Project Path="tests/FluentORM.SqlServer.Tests/FluentORM.SqlServer.Tests.csproj" />
+  </Folder>
+</Solution>

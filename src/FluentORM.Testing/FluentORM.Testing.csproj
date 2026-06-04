@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>FluentORM.Testing</AssemblyName>
+    <RootNamespace>FluentORM.Testing</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FluentORM.Core\FluentORM.Core.csproj" />
+    <ProjectReference Include="..\FluentORM.Sqlite\FluentORM.Sqlite.csproj" />
+    <ProjectReference Include="..\FluentORM.Migrations\FluentORM.Migrations.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+  </ItemGroup>
+</Project>
