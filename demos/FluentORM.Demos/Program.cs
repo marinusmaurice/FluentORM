@@ -14,6 +14,7 @@ await using (demoDb)
     await Demo06_OptimisticConcurrency.RunAsync(db);
     await Demo07_ComplexQueries.RunAsync(db);
     await Demo08_AggregatesAndCombos.RunAsync(db);
+    await Demo09_HeavySql.RunAsync(db);
 }
 
 Console.WriteLine("\n═══════════════════════════════════════");
