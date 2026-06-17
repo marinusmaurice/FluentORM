@@ -11,7 +11,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>FluentORM.Core</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>Marinus Maurice</Authors>
     <Description>A fluent, type-safe ORM for .NET with support for multiple database providers</Description>
     <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
