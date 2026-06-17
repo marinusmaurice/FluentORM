@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+	<TargetFramework>net8.0</TargetFramework>
+	<LangVersion>12</LangVersion>
+	<Nullable>enable</Nullable>
+	<ImplicitUsings>enable</ImplicitUsings>
+
+	<!-- NuGet Package Metadata -->
+	<PackageId>FluentORM.Complete</PackageId>
+	<Version>1.0.0</Version>
+	<Authors>Marinus Maurice</Authors>
+	<Description>A complete fluent, type-safe ORM for .NET with support for SQLite and SQL Server, including database migrations and schema management</Description>
+	<PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
+	<PackageLicenseExpression>MIT</PackageLicenseExpression>
+	<RepositoryUrl>https://github.com/marinusmaurice/FluentORM</RepositoryUrl>
+	<RepositoryType>git</RepositoryType>
+	<PackageTags>orm;database;fluent;sql;querybuilder;migrations;sqlite;sqlserver</PackageTags>
+	<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+	<IncludeBuildOutput>false</IncludeBuildOutput>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+	<None Include="README.md" Pack="true" PackagePath="\"/>
+  </ItemGroup>
+
+  <!-- Include DLLs from all projects -->
+  <ItemGroup>
+	<None Include="..\FluentORM.Core\bin\Release\net8.0\FluentORM.Core.dll" Pack="true" PackagePath="lib\net8.0\"/>
+	<None Include="..\FluentORM.Migrations\bin\Release\net8.0\FluentORM.Migrations.dll" Pack="true" PackagePath="lib\net8.0\"/>
+	<None Include="..\FluentORM.Sqlite\bin\Release\net8.0\FluentORM.Sqlite.dll" Pack="true" PackagePath="lib\net8.0\"/>
+	<None Include="..\FluentORM.SqlServer\bin\Release\net8.0\FluentORM.SqlServer.dll" Pack="true" PackagePath="lib\net8.0\"/>
+  </ItemGroup>
+
+  <!-- Project references for dependency metadata -->
+  <ItemGroup>
+	<ProjectReference Include="..\FluentORM.Core\FluentORM.Core.csproj" PrivateAssets="All" />
+	<ProjectReference Include="..\FluentORM.Migrations\FluentORM.Migrations.csproj" PrivateAssets="All" />
+	<ProjectReference Include="..\FluentORM.Sqlite\FluentORM.Sqlite.csproj" PrivateAssets="All" />
+	<ProjectReference Include="..\FluentORM.SqlServer\FluentORM.SqlServer.csproj" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>

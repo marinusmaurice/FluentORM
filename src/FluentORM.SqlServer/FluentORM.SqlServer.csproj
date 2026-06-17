@@ -6,6 +6,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>FluentORM.SqlServer</AssemblyName>
     <RootNamespace>FluentORM.SqlServer</RootNamespace>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>FluentORM.SqlServer</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Marinus Maurice</Authors>
+    <Description>SQL Server provider for FluentORM with dialect-specific SQL generation</Description>
+    <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/marinusmaurice/FluentORM</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>orm;sqlserver;database;sql</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FluentORM.Core\FluentORM.Core.csproj" />

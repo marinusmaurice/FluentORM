@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+	<id>FluentORM</id>
+	<version>1.0.0</version>
+	<title>FluentORM</title>
+	<authors>Marinus Maurice</authors>
+	<owners>Marinus Maurice</owners>
+	<license type="expression">MIT</license>
+	<projectUrl>https://github.com/marinusmaurice/FluentORM</projectUrl>
+	<repository type="git" url="https://github.com/marinusmaurice/FluentORM" />
+	<requireLicenseAcceptance>false</requireLicenseAcceptance>
+	<description>A complete fluent, type-safe ORM for .NET with support for SQLite and SQL Server, including database migrations and schema management</description>
+	<tags>orm;database;fluent;sql;querybuilder;migrations;sqlite;sqlserver</tags>
+	<readme>README.md</readme>
+  </metadata>
+  <files>
+	<file src="src\FluentORM\README.md" target="README.md" />
+	<file src="src\FluentORM.Core\bin\Release\net8.0\FluentORM.Core.dll" target="lib\net8.0\" />
+	<file src="src\FluentORM.Migrations\bin\Release\net8.0\FluentORM.Migrations.dll" target="lib\net8.0\" />
+	<file src="src\FluentORM.Sqlite\bin\Release\net8.0\FluentORM.Sqlite.dll" target="lib\net8.0\" />
+	<file src="src\FluentORM.SqlServer\bin\Release\net8.0\FluentORM.SqlServer.dll" target="lib\net8.0\" />
+  </files>
+</package>

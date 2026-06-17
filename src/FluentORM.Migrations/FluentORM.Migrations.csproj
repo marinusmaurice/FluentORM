@@ -6,6 +6,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>FluentORM.Migrations</AssemblyName>
     <RootNamespace>FluentORM.Migrations</RootNamespace>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>FluentORM.Migrations</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Marinus Maurice</Authors>
+    <Description>Database migration engine for FluentORM with schema management and drift detection</Description>
+    <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/marinusmaurice/FluentORM</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>orm;database;migrations;schema</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FluentORM.Core\FluentORM.Core.csproj" />

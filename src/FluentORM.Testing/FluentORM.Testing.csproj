@@ -6,6 +6,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>FluentORM.Testing</AssemblyName>
     <RootNamespace>FluentORM.Testing</RootNamespace>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>FluentORM.Testing</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Marinus Maurice</Authors>
+    <Description>Testing utilities for FluentORM including in-memory SQLite database helpers</Description>
+    <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/marinusmaurice/FluentORM</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>orm;testing;database;sqlite</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FluentORM.Core\FluentORM.Core.csproj" />

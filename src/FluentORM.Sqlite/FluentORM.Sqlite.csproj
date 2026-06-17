@@ -6,6 +6,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>FluentORM.Sqlite</AssemblyName>
     <RootNamespace>FluentORM.Sqlite</RootNamespace>
+
+    <!-- NuGet Package Metadata -->
+    <PackageId>FluentORM.Sqlite</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Marinus Maurice</Authors>
+    <Description>SQLite provider for FluentORM with dialect-specific SQL generation</Description>
+    <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/marinusmaurice/FluentORM</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>orm;sqlite;database;sql</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\FluentORM.Core\FluentORM.Core.csproj" />
