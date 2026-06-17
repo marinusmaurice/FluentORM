@@ -16,12 +16,10 @@ public static class ServiceCollectionExtensions
         var factory = new SqlServerConnectionFactory(connectionString);
 
         builder.WithPrimaryFactory(factory);
+        builder.WithDialect(dialect);
 
         var sqlBuilder = new SqlServerBuilder(builder.Options);
         configure?.Invoke(sqlBuilder);
-
-        // Register dialect via a side-effect — the DI registration happens in AddFluentOrm
-        SqlServerRegistration.Dialect = dialect;
 
         return builder;
     }
@@ -52,7 +50,3 @@ public sealed class SqlServerBuilder
     }
 }
 
-internal static class SqlServerRegistration
-{
-    internal static ISqlDialect? Dialect { get; set; }
-}

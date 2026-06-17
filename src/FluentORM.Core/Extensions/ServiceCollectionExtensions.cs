@@ -23,8 +23,13 @@ public static class ServiceCollectionExtensions
             throw new InvalidOperationException(
                 "No connection factory registered. Call UseSqlServer() or UseSqlite().");
 
+        if (builder.Dialect == null)
+            throw new InvalidOperationException(
+                "No SQL dialect registered. Call UseSqlServer() or UseSqlite().");
+
         services.AddSingleton(builder.Options);
         services.AddSingleton(builder.PrimaryFactory);
+        services.AddSingleton<ISqlDialect>(builder.Dialect);
         services.AddSingleton<EntityMapRegistry>();
         services.AddSingleton<SqlCompiler>();
         services.AddSingleton<MutationCompiler>();
@@ -33,10 +38,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<DbExecutor>(sp =>
         {
             var primary = sp.GetRequiredService<IConnectionFactory>();
-            var replica = builder.ReplicaFactory;
             var dialect = sp.GetRequiredService<ISqlDialect>();
             var options = sp.GetRequiredService<FluentOrmOptions>();
-            return new DbExecutor(primary, replica, dialect, options);
+            return new DbExecutor(primary, builder.ReplicaFactory, dialect, options);
         });
         services.AddScoped<IFluentDb, FluentDb>();
 

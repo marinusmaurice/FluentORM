@@ -14,7 +14,7 @@ public static class ServiceCollectionExtensions
         var dialect = new SqliteDialect();
         var factory = new SqliteConnectionFactory(connectionString);
         builder.WithPrimaryFactory(factory);
-        SqliteRegistration.Dialect = dialect;
+        builder.WithDialect(dialect);
         return builder;
     }
 
@@ -29,7 +29,3 @@ public static class ServiceCollectionExtensions
     }
 }
 
-internal static class SqliteRegistration
-{
-    internal static ISqlDialect? Dialect { get; set; }
-}

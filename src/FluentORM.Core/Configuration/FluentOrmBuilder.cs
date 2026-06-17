@@ -11,10 +11,17 @@ public sealed class FluentOrmBuilder
     internal readonly FluentOrmOptions Options = new();
     internal IConnectionFactory? PrimaryFactory { get; private set; }
     internal IConnectionFactory? ReplicaFactory { get; private set; }
+    internal ISqlDialect? Dialect { get; private set; }
 
     public FluentOrmBuilder WithPrimaryFactory(IConnectionFactory factory)
     {
         PrimaryFactory = factory;
+        return this;
+    }
+
+    public FluentOrmBuilder WithDialect(ISqlDialect dialect)
+    {
+        Dialect = dialect;
         return this;
     }
 

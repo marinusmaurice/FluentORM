@@ -2,6 +2,7 @@
   <Folder Name="/demos/">
     <Project Path="demos/FluentORM.Demos/FluentORM.Demos.csproj" />
     <Project Path="demos/FluentORM.MigrationsSample/FluentORM.MigrationsSample.csproj" />
+    <Project Path="demos/FluentORM.SqlServerDemo/FluentORM.SqlServerDemo.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/FluentORM.Core/FluentORM.Core.csproj" />
