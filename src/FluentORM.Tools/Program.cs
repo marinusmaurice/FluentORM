@@ -1,285 +1,775 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using FluentORM.Core.Abstractions;
+using FluentORM.Core.Exceptions;
 using FluentORM.Core.Mapping;
 using FluentORM.Migrations.Drift;
 using FluentORM.Migrations.Engine;
 using FluentORM.Migrations.Scaffold;
-using FluentORM.Migrations.Schema;
+using FluentORM.Sqlite;
+using FluentORM.SqlServer;
 
 namespace FluentORM.Tools;
 
-/// <summary>
-/// FluentORM CLI tool.
-/// Usage: dotnet fluentorm migrations [command] [options]
-/// </summary>
 internal static class Program
 {
     private static async Task<int> Main(string[] args)
     {
-        if (args.Length == 0)
+        if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
         {
             PrintHelp();
             return 0;
         }
 
-        // Dispatch on "migrations <command>"
-        if (args[0].Equals("migrations", StringComparison.OrdinalIgnoreCase) && args.Length >= 2)
+        return args[0].ToLowerInvariant() switch
         {
-            return await RunMigrationsCommandAsync(args[1..]);
-        }
-
-        Console.Error.WriteLine($"Unknown command: {args[0]}");
-        PrintHelp();
-        return 1;
+            "init"       => RunInit(args[1..]),
+            "migrations" => args.Length < 2 || args[1] is "-h" or "--help"
+                                ? PrintMigrationsHelpAndReturn()
+                                : await RunMigrationsCommandAsync(args[1..]),
+            _ => ErrorExit($"Unknown command: {args[0]}")
+        };
     }
+
+    // ── migrations <command> ──────────────────────────────────────────────────
 
     private static async Task<int> RunMigrationsCommandAsync(string[] args)
     {
-        var command = args[0].ToLower();
-        var opts = ParseOptions(args[1..]);
+        var command = args[0].ToLowerInvariant();
+        var (positional, opts) = ParseArgs(args[1..]);
+        var config = LoadConfig(opts);
 
-        var (engine, detector, generator) = BuildEngine(opts);
-        if (engine == null)
+        // 'new' doesn't need a live DB connection
+        if (command == "new")
         {
-            Console.Error.WriteLine("ERROR: Could not build migration engine. " +
-                "Ensure --connection is provided and the target assembly is loadable.");
+            var desc = positional.FirstOrDefault() ?? opts.GetValueOrDefault("name") ?? "new_migration";
+            var outDir = opts.GetValueOrDefault("output") ?? Directory.GetCurrentDirectory();
+            return CreateBlankMigration(desc, outDir, config);
+        }
+
+        var (engine, detector, generator) = BuildEngine(config);
+        if (engine is null)
+            return ErrorExit(
+                "Could not build migration engine.\n" +
+                "  Provide --connection and optionally --provider and --assembly,\n" +
+                "  or run 'fluentorm init' to create a fluentorm.json config file.");
+
+        return command switch
+        {
+            "status"   => await RunStatusAsync(engine),
+            "apply"    => await RunApplyAsync(engine, opts),
+            "rollback" => await RunRollbackAsync(engine, opts),
+            "preview"  => await RunPreviewAsync(engine),
+            "list"     => await RunListAsync(engine),
+            "history"  => await RunHistoryAsync(engine),
+            "validate" => await RunValidateAsync(engine, detector, opts),
+            "scaffold" => await RunScaffoldAsync(generator, positional, opts),
+            _          => ErrorExit($"Unknown migrations command: {command}\n  Run 'fluentorm migrations --help' for a list of commands.")
+        };
+    }
+
+    // ── init ─────────────────────────────────────────────────────────────────
+
+    private static int RunInit(string[] args)
+    {
+        var (_, opts) = ParseArgs(args);
+        var path = opts.GetValueOrDefault("config")
+            ?? Path.Combine(Directory.GetCurrentDirectory(), "fluentorm.json");
+
+        if (File.Exists(path))
+        {
+            PrintWarn($"Config file already exists: {path}");
             return 1;
         }
 
-        switch (command)
+        var template = new CliConfig
         {
-            case "status":
-                return await RunStatusAsync(engine!);
+            Provider = "sqlite",
+            ConnectionString = "Data Source=myapp.db",
+            Assembly = "./MyApp.dll",
+            MigrationsNamespace = "MyApp.Migrations"
+        };
 
-            case "apply":
-                return await RunApplyAsync(engine!, opts.ContainsKey("allow-destructive"));
-
-            case "rollback":
-                if (opts.TryGetValue("to", out var toVersion))
-                    await engine!.RollbackToAsync(long.Parse(toVersion));
-                else
-                    await engine!.RollbackAsync();
-                Console.WriteLine("Rollback complete.");
-                return 0;
-
-            case "preview":
-                var preview = await engine!.PreviewAsync();
-                Console.WriteLine(preview);
-                return 0;
-
-            case "list":
-                return await RunListAsync(engine!);
-
-            case "history":
-                return await RunHistoryAsync(engine!);
-
-            case "validate":
-                return await RunValidateAsync(engine!, detector, opts.ContainsKey("check-checksums"));
-
-            case "scaffold":
-                if (generator == null)
-                {
-                    Console.Error.WriteLine("ERROR: Scaffold requires --connection and a loaded assembly.");
-                    return 1;
-                }
-                var desc = args.Length > 1 ? args[1] : "auto_migration";
-                var output = opts.TryGetValue("output", out var outDir) ? outDir : Directory.GetCurrentDirectory();
-                var dryRun = opts.ContainsKey("dry-run");
-                var result = await generator.GenerateAsync(desc, dryRun ? null : output, dryRun);
-                Console.WriteLine(result);
-                return 0;
-
-            default:
-                Console.Error.WriteLine($"Unknown migrations command: {command}");
-                PrintMigrationsHelp();
-                return 1;
-        }
+        var json = JsonSerializer.Serialize(template, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        });
+        File.WriteAllText(path, json);
+        PrintOk($"Created {path}");
+        Console.WriteLine("  Edit provider, connectionString, and assembly to match your project.");
+        return 0;
     }
+
+    // ── status ────────────────────────────────────────────────────────────────
 
     private static async Task<int> RunStatusAsync(MigrationEngine engine)
     {
         var status = await engine.StatusAsync();
 
-        Console.WriteLine();
-        Console.WriteLine("FluentORM Migration Status");
-        Console.WriteLine(new string('═', 58));
-        Console.WriteLine($"  Applied      : {status.Applied.Count,3} migration(s)");
-        Console.WriteLine($"  Pending      : {status.Pending.Count,3} migration(s)");
-
+        Banner("Migration Status");
+        Console.WriteLine($"  {"Applied",-22} {status.Applied.Count,4}");
+        Console.WriteLine($"  {"Pending (safe)",-22} {status.Pending.Count,4}");
         if (status.DestructivePending.Count > 0)
-            Console.WriteLine($"  Destructive  : {status.DestructivePending.Count,3} migration(s)  ⚠  (requires --allow-destructive)");
+            Console.WriteLine($"  {"Pending (destructive)",-22} {status.DestructivePending.Count,4}  ← requires --allow-destructive");
 
-        if (status.Pending.Count > 0 || status.DestructivePending.Count > 0)
+        if (status.Applied.Any())
         {
             Console.WriteLine();
-            foreach (var m in status.Pending)
-                Console.WriteLine($"  PENDING  {m.Version}  {m.Description,-40} [safe]");
-            foreach (var m in status.DestructivePending)
-            {
-                Console.WriteLine($"  PENDING  {m.Version}  {m.Description,-40} [DESTRUCTIVE]");
-                if (m.DestructiveReason != null)
-                    Console.WriteLine($"             └─ '{m.DestructiveReason}'");
-            }
+            Console.WriteLine("  Applied:");
+            foreach (var m in status.Applied)
+                Console.WriteLine($"    {Tick} {m.Version}  {m.Description,-40}  {m.AppliedAt:yyyy-MM-dd HH:mm}");
         }
 
-        Console.WriteLine();
-        if (status.Pending.Count > 0 || status.DestructivePending.Count > 0)
+        if (status.Pending.Any() || status.DestructivePending.Any())
         {
-            Console.WriteLine($"  Run: dotnet fluentorm migrations apply");
+            Console.WriteLine();
+            Console.WriteLine("  Pending:");
+            foreach (var m in status.Pending)
+                Console.WriteLine($"    {Dot} {m.Version}  {m.Description,-40}  [safe]");
+            foreach (var m in status.DestructivePending)
+            {
+                Console.WriteLine($"    {Warn} {m.Version}  {m.Description,-40}  [DESTRUCTIVE]");
+                if (m.DestructiveReason != null)
+                    Console.WriteLine($"          └─ {m.DestructiveReason}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("  Run: fluentorm migrations apply");
             if (status.DestructivePending.Count > 0)
-                Console.WriteLine($"  Run: dotnet fluentorm migrations apply --allow-destructive");
+                Console.WriteLine("  Run: fluentorm migrations apply --allow-destructive");
         }
-        Console.WriteLine(new string('═', 58));
+        else
+        {
+            Console.WriteLine();
+            PrintOk("Database is up to date.");
+        }
+
+        Ruler();
         return 0;
     }
 
-    private static async Task<int> RunApplyAsync(MigrationEngine engine, bool allowDestructive)
-    {
-        try
-        {
-            var beforeStatus = await engine.StatusAsync();
-            var pendingCount = beforeStatus.Pending.Count + beforeStatus.DestructivePending.Count;
+    // ── apply ─────────────────────────────────────────────────────────────────
 
-            if (pendingCount == 0)
+    private static async Task<int> RunApplyAsync(MigrationEngine engine, Dictionary<string, string> opts)
+    {
+        bool allowDestructive = opts.ContainsKey("allow-destructive");
+
+        if (opts.TryGetValue("to", out var toStr))
+        {
+            if (!long.TryParse(toStr, out var toVersion))
+                return ErrorExit($"Invalid version: '{toStr}'. Version must be a number like 20240601001.");
+            Console.WriteLine($"  Applying migrations up to version {toVersion}...");
+            try
             {
-                Console.WriteLine("No pending migrations.");
+                await engine.ApplyToAsync(toVersion, allowDestructive);
+                PrintOk($"Applied all migrations up to version {toVersion}.");
                 return 0;
             }
+            catch (Exception ex) { return HandleMigrationException(ex); }
+        }
 
-            Console.WriteLine($"Applying {pendingCount} pending migration(s)...");
-            await engine.ApplyAsync(allowDestructive);
-            Console.WriteLine("✓ All migrations applied successfully.");
+        var before = await engine.StatusAsync();
+        int pendingCount = before.Pending.Count + before.DestructivePending.Count;
+        if (pendingCount == 0)
+        {
+            PrintOk("Database is up to date. Nothing to apply.");
             return 0;
         }
-        catch (Core.Exceptions.DestructiveMigrationException ex)
+
+        Console.WriteLine($"  Applying {pendingCount} pending migration(s)...");
+        try
         {
-            Console.Error.WriteLine($"ERROR: {ex.Message}");
-            Console.Error.WriteLine("Re-run with --allow-destructive to proceed.");
-            return 2;
+            await engine.ApplyAsync(allowDestructive);
+            var after = await engine.StatusAsync();
+            int applied = after.Applied.Count - before.Applied.Count;
+            PrintOk($"Applied {applied} migration(s). Database is up to date.");
+            return 0;
         }
-        catch (Core.Exceptions.MigrationTamperedWithException ex)
-        {
-            Console.Error.WriteLine($"ERROR: {ex.Message}");
-            return 3;
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"ERROR: {ex.Message}");
-            return 1;
-        }
+        catch (Exception ex) { return HandleMigrationException(ex); }
     }
+
+    // ── rollback ──────────────────────────────────────────────────────────────
+
+    private static async Task<int> RunRollbackAsync(MigrationEngine engine, Dictionary<string, string> opts)
+    {
+        if (opts.TryGetValue("to", out var toStr))
+        {
+            if (!long.TryParse(toStr, out var toVersion))
+                return ErrorExit($"Invalid version: '{toStr}'.");
+            Console.WriteLine($"  Rolling back to version {toVersion}...");
+            try { await engine.RollbackToAsync(toVersion); PrintOk("Rollback complete."); return 0; }
+            catch (Exception ex) { return HandleMigrationException(ex); }
+        }
+
+        Console.WriteLine("  Rolling back last applied migration...");
+        try { await engine.RollbackAsync(); PrintOk("Rollback complete."); return 0; }
+        catch (Exception ex) { return HandleMigrationException(ex); }
+    }
+
+    // ── preview ───────────────────────────────────────────────────────────────
+
+    private static async Task<int> RunPreviewAsync(MigrationEngine engine)
+    {
+        var sql = await engine.PreviewAsync();
+        if (string.IsNullOrWhiteSpace(sql))
+        {
+            PrintOk("No pending migrations. Nothing to preview.");
+            return 0;
+        }
+        Console.WriteLine(sql);
+        return 0;
+    }
+
+    // ── list ──────────────────────────────────────────────────────────────────
 
     private static async Task<int> RunListAsync(MigrationEngine engine)
     {
         var status = await engine.StatusAsync();
-        Console.WriteLine($"{"Version",-20} {"Description",-40} {"Status",-12} {"Applied At",-24}");
-        Console.WriteLine(new string('-', 100));
+        int total = status.Applied.Count + status.Pending.Count + status.DestructivePending.Count;
+
+        Banner($"All Migrations  ({total} total)");
+        Console.WriteLine($"  {"Version",-20} {"Description",-40} {"Status",-12} {"Applied At"}");
+        Console.WriteLine($"  {new string('-', 90)}");
+
         foreach (var m in status.Applied)
-            Console.WriteLine($"{m.Version,-20} {m.Description,-40} {"Applied",-12} {m.AppliedAt:yyyy-MM-dd HH:mm:ss}");
+            Console.WriteLine($"  {m.Version,-20} {m.Description,-40} {"Applied",-12} {m.AppliedAt:yyyy-MM-dd HH:mm:ss}");
         foreach (var m in status.Pending)
-            Console.WriteLine($"{m.Version,-20} {m.Description,-40} {"Pending",-12}");
+            Console.WriteLine($"  {m.Version,-20} {m.Description,-40} {"Pending",-12}");
         foreach (var m in status.DestructivePending)
-            Console.WriteLine($"{m.Version,-20} {m.Description,-40} {"DESTRUCTIVE",-12}");
+            Console.WriteLine($"  {m.Version,-20} {m.Description,-40} {"DESTRUCTIVE",-12}");
+
+        if (total == 0)
+            Console.WriteLine("  No migrations found in the loaded assembly.");
+
+        Ruler();
         return 0;
     }
+
+    // ── history ───────────────────────────────────────────────────────────────
 
     private static async Task<int> RunHistoryAsync(MigrationEngine engine)
     {
         var status = await engine.StatusAsync();
-        Console.WriteLine("Applied migration history:");
-        Console.WriteLine(new string('-', 80));
-        foreach (var m in status.Applied.OrderBy(a => a.Version))
-            Console.WriteLine($"  {m.Version}  {m.Description,-40}  applied {m.AppliedAt:yyyy-MM-dd HH:mm}");
+
+        Banner("Applied History");
+        if (!status.Applied.Any())
+        {
+            Console.WriteLine("  No migrations have been applied yet.");
+        }
+        else
+        {
+            Console.WriteLine($"  {"#",-4} {"Version",-20} {"Description",-40} {"Applied At",-22} {"By"}");
+            Console.WriteLine($"  {new string('-', 100)}");
+            int i = 1;
+            foreach (var m in status.Applied.OrderBy(m => m.Version))
+                Console.WriteLine($"  {i++,-4} {m.Version,-20} {m.Description,-40} {m.AppliedAt:yyyy-MM-dd HH:mm:ss}");
+        }
+
+        Ruler();
         return 0;
     }
 
+    // ── validate ──────────────────────────────────────────────────────────────
+
     private static async Task<int> RunValidateAsync(
-        MigrationEngine engine, SchemaDriftDetector? detector, bool checkChecksums)
+        MigrationEngine engine, SchemaDriftDetector? detector, Dictionary<string, string> opts)
     {
-        if (checkChecksums)
+        Banner("Validation");
+        int exitCode = 0;
+
+        if (opts.ContainsKey("check-checksums"))
         {
+            Console.WriteLine("  Checking migration checksums...");
             try
             {
                 await engine.ValidateChecksumsAsync();
-                Console.WriteLine("✓ All checksums valid — no migrations tampered with.");
+                PrintOk("Checksums valid — no applied migrations have been modified.");
             }
-            catch (Core.Exceptions.MigrationTamperedWithException ex)
+            catch (MigrationTamperedWithException ex)
             {
-                Console.Error.WriteLine($"✗ TAMPERED: {ex.Message}");
-                return 1;
+                PrintError(ex.Message);
+                exitCode = 1;
             }
         }
 
         if (detector != null)
         {
-            var report = await detector.DetectAsync();
-            if (report.Issues.Count == 0)
+            Console.WriteLine("  Running schema drift detection...");
+            try
             {
-                Console.WriteLine("✓ No schema drift detected.");
+                var report = await detector.DetectAsync();
+                if (report.Issues.Count == 0)
+                    PrintOk("No schema drift detected. C# entities match the database.");
+                else
+                {
+                    Console.WriteLine(report.ToString());
+                    if (report.HasErrors) exitCode = 1;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                Console.WriteLine(report.ToString());
-                return report.HasErrors ? 1 : 0;
+                PrintError($"Drift detection failed: {ex.Message}");
+                exitCode = 1;
             }
         }
+        else if (!opts.ContainsKey("check-checksums"))
+        {
+            Console.WriteLine("  No entity assembly loaded — skipping drift detection.");
+            Console.WriteLine("  Use --assembly <path> to enable drift detection.");
+        }
+
+        Ruler();
+        return exitCode;
+    }
+
+    // ── scaffold ──────────────────────────────────────────────────────────────
+
+    private static async Task<int> RunScaffoldAsync(
+        ScaffoldGenerator? generator, string[] positional, Dictionary<string, string> opts)
+    {
+        if (generator is null)
+            return ErrorExit(
+                "Scaffold requires entity types to inspect for drift.\n" +
+                "  Use --assembly <path> to load an assembly with [Table] entities.");
+
+        var desc = positional.FirstOrDefault()
+            ?? opts.GetValueOrDefault("name")
+            ?? "auto_migration";
+        var dryRun = opts.ContainsKey("dry-run");
+        var outDir = opts.GetValueOrDefault("output") ?? Directory.GetCurrentDirectory();
+
+        Console.WriteLine($"  Detecting schema drift and generating migration for: {desc}");
+        if (dryRun) Console.WriteLine("  (dry-run — no file will be written)");
+
+        var result = await generator.GenerateAsync(desc, dryRun ? null : outDir, dryRun);
+        Console.WriteLine(result);
         return 0;
     }
 
-    private static (MigrationEngine? engine, SchemaDriftDetector? detector, ScaffoldGenerator? generator)
-        BuildEngine(System.Collections.Generic.Dictionary<string, string> opts)
+    // ── new migration ─────────────────────────────────────────────────────────
+
+    private static int CreateBlankMigration(string description, string outputDir, CliConfig config)
     {
-        // In a real CLI tool, these would be loaded from config or env vars.
-        // For library use, the engine is instantiated by user code.
-        // This is a placeholder that demonstrates the wiring.
-        return (null, null, null);
+        if (!Directory.Exists(outputDir))
+        {
+            try { Directory.CreateDirectory(outputDir); }
+            catch (Exception ex) { return ErrorExit($"Cannot create output directory '{outputDir}': {ex.Message}"); }
+        }
+
+        var version = NextVersion(outputDir);
+        var className = ToPascalCase(description);
+        var ns = config.MigrationsNamespace ?? "Migrations";
+        var fileName = Path.Combine(outputDir, $"Migration_{version}_{className}.cs");
+
+        if (File.Exists(fileName))
+            return ErrorExit($"File already exists: {fileName}");
+
+        var content = $$"""
+            using FluentORM.Core.Attributes;
+            using FluentORM.Migrations.Engine;
+            using FluentORM.Migrations.Schema;
+
+            namespace {{ns}};
+
+            [Migration({{version}}, "{{description}}")]
+            public sealed class {{className}} : Migration
+            {
+                public override void Up(SchemaBuilder schema)
+                {
+                    // TODO: implement migration
+                    //
+                    // Examples:
+                    //   schema.CreateTable<MyEntity>(t => { ... });
+                    //   schema.AddColumn<MyEntity>(x => x.NewColumn).NotNull().Default("default");
+                    //   schema.AddIndex<MyEntity>(x => x.Column);
+                    //   schema.Sql("UPDATE ...");
+                }
+
+                public override void Down(SchemaBuilder schema)
+                {
+                    // TODO: implement rollback
+                    //
+                    // If this migration cannot be reversed, throw:
+                    //   throw new IrreversibleMigrationException("Reason why rollback is not possible.");
+                }
+            }
+            """;
+
+        File.WriteAllText(fileName, content);
+        PrintOk($"Created {fileName}");
+        Console.WriteLine($"  Version  : {version}");
+        Console.WriteLine($"  Class    : {className}");
+        Console.WriteLine($"  Namespace: {ns}");
+        return 0;
     }
 
-    private static System.Collections.Generic.Dictionary<string, string> ParseOptions(string[] args)
+    // ── Engine wiring ─────────────────────────────────────────────────────────
+
+    private static (MigrationEngine? engine, SchemaDriftDetector? detector, ScaffoldGenerator? generator)
+        BuildEngine(CliConfig config)
     {
-        var dict = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(config.ConnectionString))
+        {
+            PrintWarn("No connection string configured.");
+            PrintWarn("Provide --connection <string>, set FLUENTORM_CONNECTION, or add connectionString to fluentorm.json.");
+            return (null, null, null);
+        }
+
+        ISqlDialect dialect;
+        IConnectionFactory factory;
+        try
+        {
+            (dialect, factory) = CreateProvider(config);
+        }
+        catch (Exception ex)
+        {
+            PrintError($"Failed to create provider: {ex.Message}");
+            return (null, null, null);
+        }
+
+        var assemblies = LoadAssemblies(config.Assembly);
+        var registry = new EntityMapRegistry();
+        foreach (var asm in assemblies)
+        {
+            try { registry.ScanAssembly(asm); }
+            catch { /* non-critical: assembly may have no [Table] types */ }
+        }
+
+        var engine    = new MigrationEngine(factory, dialect, registry, assemblies);
+        var detector  = new SchemaDriftDetector(factory, dialect, registry);
+        var generator = new ScaffoldGenerator(detector, registry);
+
+        return (engine, detector, generator);
+    }
+
+    private static (ISqlDialect dialect, IConnectionFactory factory) CreateProvider(CliConfig config)
+    {
+        var cs = config.ConnectionString!;
+        return (config.Provider ?? "sqlite").ToLowerInvariant() switch
+        {
+            "sqlserver" or "mssql" or "sql-server" =>
+                ((ISqlDialect)new SqlServerDialect(), (IConnectionFactory)new SqlServerConnectionFactory(cs)),
+            "sqlite" =>
+                (new SqliteDialect(), new SqliteConnectionFactory(cs)),
+            var p =>
+                throw new NotSupportedException($"Unknown provider: '{p}'. Valid values: sqlite, sqlserver")
+        };
+    }
+
+    private static List<Assembly> LoadAssemblies(string? assemblyPath)
+    {
+        if (string.IsNullOrWhiteSpace(assemblyPath))
+            return [Assembly.GetEntryAssembly()!];
+
+        var resolved = Path.IsPathRooted(assemblyPath)
+            ? assemblyPath
+            : Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), assemblyPath));
+
+        if (!File.Exists(resolved))
+        {
+            PrintWarn($"Assembly not found: {resolved}");
+            PrintWarn("Migrations from the CLI tool itself will be scanned (likely none).");
+            return [Assembly.GetEntryAssembly()!];
+        }
+
+        // When the user's DLL has dependencies (Entity Framework providers, domain libraries, etc.)
+        // that aren't shipped with this tool, resolve them from the same directory as the user's assembly.
+        // FluentORM.* assemblies are already loaded by the tool and will be reused automatically.
+        var probeDir = Path.GetDirectoryName(Path.GetFullPath(resolved))!;
+        AppDomain.CurrentDomain.AssemblyResolve += (_, args) =>
+        {
+            var shortName = new AssemblyName(args.Name).Name;
+            var candidate = Path.Combine(probeDir, shortName + ".dll");
+            if (File.Exists(candidate))
+            {
+                try { return Assembly.LoadFrom(candidate); }
+                catch { /* fall through */ }
+            }
+            return null;
+        };
+
+        // Warn if the user's FluentORM.Migrations version might differ from the tool's.
+        WarnOnVersionMismatch(resolved, probeDir);
+
+        try
+        {
+            return [Assembly.LoadFrom(resolved)];
+        }
+        catch (Exception ex)
+        {
+            PrintError($"Could not load assembly '{resolved}': {ex.Message}");
+            return [Assembly.GetEntryAssembly()!];
+        }
+    }
+
+    private static void WarnOnVersionMismatch(string userAssemblyPath, string probeDir)
+    {
+        var toolMigrationsVersion = typeof(MigrationEngine).Assembly.GetName().Version;
+        var userMigrationsPath = Path.Combine(probeDir, "FluentORM.Migrations.dll");
+        if (!File.Exists(userMigrationsPath)) return;
+
+        try
+        {
+            var userVersion = AssemblyName.GetAssemblyName(userMigrationsPath).Version;
+            if (userVersion != toolMigrationsVersion)
+                PrintWarn(
+                    $"Version mismatch: tool ships FluentORM.Migrations {toolMigrationsVersion}, " +
+                    $"your project uses {userVersion}. Migration types may be incompatible. " +
+                    $"Install FluentORM.Tools {userVersion?.Major}.{userVersion?.Minor}.{userVersion?.Build} to match.");
+        }
+        catch { /* non-critical */ }
+    }
+
+    // ── Config loading ────────────────────────────────────────────────────────
+
+    private static CliConfig LoadConfig(Dictionary<string, string> opts)
+    {
+        var config = LoadConfigFile(opts.GetValueOrDefault("config"));
+
+        // Environment variables — fill in gaps from file
+        config.Provider          ??= Environment.GetEnvironmentVariable("FLUENTORM_PROVIDER");
+        config.ConnectionString  ??= Environment.GetEnvironmentVariable("FLUENTORM_CONNECTION");
+        config.Assembly          ??= Environment.GetEnvironmentVariable("FLUENTORM_ASSEMBLY");
+
+        // CLI flags — highest priority
+        if (opts.TryGetValue("provider",   out var p))  config.Provider = p;
+        if (opts.TryGetValue("connection", out var c))  config.ConnectionString = c;
+        if (opts.TryGetValue("assembly",   out var a))  config.Assembly = a;
+        if (opts.TryGetValue("namespace",  out var ns)) config.MigrationsNamespace = ns;
+
+        config.Provider ??= "sqlite";
+        return config;
+    }
+
+    private static CliConfig LoadConfigFile(string? explicitPath)
+    {
+        var path = explicitPath
+            ?? Path.Combine(Directory.GetCurrentDirectory(), "fluentorm.json");
+
+        if (!File.Exists(path)) return new CliConfig();
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<CliConfig>(json,
+                       new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                   ?? new CliConfig();
+        }
+        catch (Exception ex)
+        {
+            PrintWarn($"Could not read config file '{path}': {ex.Message}");
+            return new CliConfig();
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static int HandleMigrationException(Exception ex)
+    {
+        return ex switch
+        {
+            DestructiveMigrationException e =>
+                ErrorExit($"{e.Message}\n  Re-run with --allow-destructive to proceed.", exitCode: 2),
+            MigrationTamperedWithException e =>
+                ErrorExit(e.Message, exitCode: 3),
+            IrreversibleMigrationException e =>
+                ErrorExit(e.Message, exitCode: 4),
+            MigrationOrderException e =>
+                ErrorExit(e.Message, exitCode: 5),
+            MigrationExecutionException e =>
+                ErrorExit(e.Message, exitCode: 6),
+            _ =>
+                ErrorExit($"Unexpected error: {ex.Message}\n{ex.StackTrace}", exitCode: 1)
+        };
+    }
+
+    private static long NextVersion(string outputDir)
+    {
+        var prefix = $"{DateTime.UtcNow:yyyyMMdd}";
+        var existing = Directory.EnumerateFiles(outputDir, "Migration_*.cs")
+            .Select(f => Path.GetFileNameWithoutExtension(f))
+            .Select(name => { var parts = name.Split('_'); return parts.Length >= 2 ? parts[1] : null; })
+            .Where(v => v?.StartsWith(prefix) == true)
+            .Select(v => long.TryParse(v, out var n) ? n : 0L)
+            .Where(n => n > 0)
+            .ToList();
+
+        if (existing.Count == 0) return long.Parse($"{prefix}001");
+        var next = existing.Max() + 1;
+        // Keep sequence zero-padded to 3 digits: yyyyMMddNNN
+        return next;
+    }
+
+    private static (string[] positional, Dictionary<string, string> opts) ParseArgs(string[] args)
+    {
+        var opts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var positional = new List<string>();
+
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i].StartsWith("--"))
             {
                 var key = args[i][2..];
-                var val = (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
-                    ? args[++i]
-                    : "true";
-                dict[key] = val;
+                if (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
+                    opts[key] = args[++i];
+                else
+                    opts[key] = "true";
+            }
+            else
+            {
+                positional.Add(args[i]);
             }
         }
-        return dict;
+
+        return (positional.ToArray(), opts);
     }
+
+    private static string ToPascalCase(string s) =>
+        string.Concat(s.Split('_', ' ', '-')
+            .Select(w => w.Length > 0 ? char.ToUpper(w[0]) + w[1..] : ""));
+
+    // ── Output ────────────────────────────────────────────────────────────────
+
+    private const string Tick = "✓";
+    private const string Dot  = "·";
+    private const string Warn = "⚠";
+
+    private static void Banner(string title)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"  {title}");
+        Console.WriteLine($"  {new string('─', 62)}");
+    }
+
+    private static void Ruler() =>
+        Console.WriteLine($"  {new string('─', 62)}");
+
+    private static void PrintOk(string msg)
+    {
+        var prev = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"  {Tick} {msg}");
+        Console.ForegroundColor = prev;
+    }
+
+    private static void PrintWarn(string msg)
+    {
+        var prev = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"  {Warn} {msg}");
+        Console.ForegroundColor = prev;
+    }
+
+    private static void PrintError(string msg)
+    {
+        var prev = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.Error.WriteLine($"  ERROR: {msg}");
+        Console.ForegroundColor = prev;
+    }
+
+    private static int ErrorExit(string msg, int exitCode = 1)
+    {
+        PrintError(msg);
+        return exitCode;
+    }
+
+    private static int PrintMigrationsHelpAndReturn()
+    {
+        PrintMigrationsHelp();
+        return 0;
+    }
+
+    // ── Help text ─────────────────────────────────────────────────────────────
 
     private static void PrintHelp()
     {
-        Console.WriteLine("FluentORM CLI tool");
-        Console.WriteLine("Usage: dotnet fluentorm migrations <command> [options]");
-        Console.WriteLine();
-        PrintMigrationsHelp();
+        Console.WriteLine("""
+            FluentORM CLI  —  database migration tool
+
+            Usage:
+              fluentorm init                          Create a fluentorm.json config file
+              fluentorm migrations <command> [flags]  Run migration commands
+              fluentorm --help                        Show this help
+
+            Global flags (apply to all migration commands):
+              --config <path>        Config file path   (default: ./fluentorm.json)
+              --provider <name>      sqlite | sqlserver  (default: sqlite)
+              --connection <string>  Database connection string
+              --assembly <path>      Path to the .NET assembly containing your migrations
+              --namespace <ns>       Namespace for generated migration files
+
+            Environment variables:
+              FLUENTORM_PROVIDER     Override provider
+              FLUENTORM_CONNECTION   Override connection string
+              FLUENTORM_ASSEMBLY     Override assembly path
+
+            Run 'fluentorm migrations --help' for available migration commands.
+            """);
     }
 
     private static void PrintMigrationsHelp()
     {
-        Console.WriteLine("Migration commands:");
-        Console.WriteLine("  status                    Show applied, pending, and destructive-pending migrations");
-        Console.WriteLine("  apply                     Apply all safe pending migrations");
-        Console.WriteLine("  apply --allow-destructive Apply all pending including destructive");
-        Console.WriteLine("  apply --to <version>      Apply up to specific version");
-        Console.WriteLine("  rollback                  Roll back the last applied migration");
-        Console.WriteLine("  rollback --to <version>   Roll back to specific version");
-        Console.WriteLine("  preview                   Show SQL that would be executed, no DB changes");
-        Console.WriteLine("  list                      List all migration classes found in assembly");
-        Console.WriteLine("  history                   Show full applied migration history from DB");
-        Console.WriteLine("  validate                  Run schema drift detection and report");
-        Console.WriteLine("  validate --check-checksums Verify no applied migrations were tampered with");
-        Console.WriteLine("  scaffold \"description\"    Generate migration file from detected drift");
-        Console.WriteLine("  scaffold --dry-run        Preview scaffold output without writing file");
-        Console.WriteLine("  scaffold --output <dir>   Write to specific directory");
+        Console.WriteLine("""
+            FluentORM CLI  —  migration commands
+
+            Usage: fluentorm migrations <command> [flags]
+
+            Informational:
+              status                        Show applied, pending, and destructive migrations
+              list                          List all migration classes found in the assembly
+              history                       Show applied history from the database
+              preview                       Print the SQL that would run — no DB changes
+
+            Execution:
+              apply                         Apply all safe pending migrations
+              apply --allow-destructive     Also apply destructive migrations
+              apply --to <version>          Apply up to and including a specific version
+              rollback                      Roll back the last applied migration
+              rollback --to <version>       Roll back migrations newer than <version>
+
+            Safety:
+              validate                      Detect schema drift between C# entities and DB
+              validate --check-checksums    Also verify no applied migrations were modified
+
+            Code generation:
+              new <description>             Create a blank migration file from a template
+              new --output <dir>            Write file to a specific directory (default: CWD)
+              scaffold <description>        Generate a migration file from detected drift
+              scaffold --dry-run            Preview scaffold output without writing a file
+              scaffold --output <dir>       Write scaffold output to a specific directory
+
+            Examples:
+              fluentorm init
+              fluentorm migrations status --connection "Data Source=app.db" --assembly ./App.dll
+              fluentorm migrations apply --allow-destructive
+              fluentorm migrations rollback --to 20240601003
+              fluentorm migrations new add_users_table --output ./src/Migrations
+              fluentorm migrations scaffold add_missing_columns --output ./src/Migrations
+            """);
     }
+}
+
+// ── Config model ──────────────────────────────────────────────────────────────
+
+internal sealed class CliConfig
+{
+    [JsonPropertyName("provider")]
+    public string? Provider { get; set; }
+
+    [JsonPropertyName("connectionString")]
+    public string? ConnectionString { get; set; }
+
+    [JsonPropertyName("assembly")]
+    public string? Assembly { get; set; }
+
+    [JsonPropertyName("migrationsNamespace")]
+    public string? MigrationsNamespace { get; set; }
 }

@@ -13,24 +13,28 @@ REM ── Build all source projects in Release ──────────�
 echo Building all projects in Release mode...
 echo.
 
-echo [1/5] FluentORM.Core
+echo [1/6] FluentORM.Core
 dotnet build src\FluentORM.Core\FluentORM.Core.csproj -c Release -v q
 if errorlevel 1 goto :error
 
-echo [2/5] FluentORM.Migrations
+echo [2/6] FluentORM.Migrations
 dotnet build src\FluentORM.Migrations\FluentORM.Migrations.csproj -c Release -v q
 if errorlevel 1 goto :error
 
-echo [3/5] FluentORM.Sqlite
+echo [3/6] FluentORM.Sqlite
 dotnet build src\FluentORM.Sqlite\FluentORM.Sqlite.csproj -c Release -v q
 if errorlevel 1 goto :error
 
-echo [4/5] FluentORM.SqlServer
+echo [4/6] FluentORM.SqlServer
 dotnet build src\FluentORM.SqlServer\FluentORM.SqlServer.csproj -c Release -v q
 if errorlevel 1 goto :error
 
-echo [5/5] FluentORM.Testing
+echo [5/6] FluentORM.Testing
 dotnet build src\FluentORM.Testing\FluentORM.Testing.csproj -c Release -v q
+if errorlevel 1 goto :error
+
+echo [6/6] FluentORM.Tools  (CLI tool)
+dotnet build src\FluentORM.Tools\FluentORM.Tools.csproj -c Release -v q
 if errorlevel 1 goto :error
 
 echo.
@@ -52,6 +56,9 @@ dotnet pack src\FluentORM.SqlServer\FluentORM.SqlServer.csproj -c Release -o nup
 if errorlevel 1 goto :error
 
 dotnet pack src\FluentORM.Testing\FluentORM.Testing.csproj   -c Release -o nupkg --no-build
+if errorlevel 1 goto :error
+
+dotnet pack src\FluentORM.Tools\FluentORM.Tools.csproj       -c Release -o nupkg --no-build
 if errorlevel 1 goto :error
 
 REM Meta-package (bundles all providers in one install)

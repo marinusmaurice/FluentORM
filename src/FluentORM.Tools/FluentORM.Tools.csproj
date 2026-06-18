@@ -7,15 +7,31 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>fluentorm</AssemblyName>
     <RootNamespace>FluentORM.Tools</RootNamespace>
+
+    <!-- dotnet tool packaging -->
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>fluentorm</ToolCommandName>
+
+    <!-- NuGet metadata -->
     <PackageId>FluentORM.Tools</PackageId>
-    <Version>1.0.0</Version>
-    <Description>FluentORM CLI tool for migration management</Description>
+    <Version>1.0.1</Version>
+    <Authors>Marinus Maurice</Authors>
+    <Description>FluentORM CLI — standalone migration tool. Apply, rollback, preview, scaffold, and validate database migrations for any project using FluentORM.Migrations.</Description>
+    <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/marinusmaurice/FluentORM</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>orm;database;migrations;cli;tools;sqlite;sqlserver</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Bundled at pack time — the tool ships with all FluentORM libraries it needs -->
     <ProjectReference Include="..\FluentORM.Migrations\FluentORM.Migrations.csproj" />
     <ProjectReference Include="..\FluentORM.Sqlite\FluentORM.Sqlite.csproj" />
     <ProjectReference Include="..\FluentORM.SqlServer\FluentORM.SqlServer.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>
