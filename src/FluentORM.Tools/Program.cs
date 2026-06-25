@@ -12,6 +12,7 @@ using FluentORM.Core.Mapping;
 using FluentORM.Migrations.Drift;
 using FluentORM.Migrations.Engine;
 using FluentORM.Migrations.Scaffold;
+using FluentORM.Migrations.Snapshot;
 using FluentORM.Sqlite;
 using FluentORM.SqlServer;
 
@@ -45,7 +46,7 @@ internal static class Program
         var (positional, opts) = ParseArgs(args[1..]);
         var config = LoadConfig(opts);
 
-        // 'new' doesn't need a live DB connection
+        // Commands that work without a live DB connection
         if (command == "new")
         {
             var desc = positional.FirstOrDefault() ?? opts.GetValueOrDefault("name") ?? "new_migration";
@@ -53,8 +54,30 @@ internal static class Program
             return CreateBlankMigration(desc, outDir, config);
         }
 
-        var (engine, detector, generator) = BuildEngine(config);
-        if (engine is null)
+        if (command == "scaffold")
+        {
+            // Snapshot mode only needs the assembly; no DB connection required.
+            // --no-snapshot falls back to live-DB drift detection and DOES need a connection.
+            var noSnap = opts.ContainsKey("no-snapshot");
+            var assemblies = LoadAssemblies(config.Assembly);
+            var registry   = BuildRegistry(assemblies);
+            ScaffoldGenerator? dbGen = null;
+
+            if (noSnap)
+            {
+                var (engine, detector, gen) = BuildEngine(config);
+                if (engine is null)
+                    return ErrorExit(
+                        "--no-snapshot requires a valid --connection to run live DB drift detection.");
+                dbGen = gen;
+            }
+
+            return await RunScaffoldAsync(dbGen, registry, config, positional, opts);
+        }
+
+        // All remaining commands need a live DB
+        var (eng, det, generator) = BuildEngine(config);
+        if (eng is null)
             return ErrorExit(
                 "Could not build migration engine.\n" +
                 "  Provide --connection and optionally --provider and --assembly,\n" +
@@ -62,14 +85,13 @@ internal static class Program
 
         return command switch
         {
-            "status"   => await RunStatusAsync(engine),
-            "apply"    => await RunApplyAsync(engine, opts),
-            "rollback" => await RunRollbackAsync(engine, opts),
-            "preview"  => await RunPreviewAsync(engine),
-            "list"     => await RunListAsync(engine),
-            "history"  => await RunHistoryAsync(engine),
-            "validate" => await RunValidateAsync(engine, detector, opts),
-            "scaffold" => await RunScaffoldAsync(generator, positional, opts),
+            "status"   => await RunStatusAsync(eng),
+            "apply"    => await RunApplyAsync(eng, opts),
+            "rollback" => await RunRollbackAsync(eng, opts),
+            "preview"  => await RunPreviewAsync(eng),
+            "list"     => await RunListAsync(eng),
+            "history"  => await RunHistoryAsync(eng),
+            "validate" => await RunValidateAsync(eng, det, opts),
             _          => ErrorExit($"Unknown migrations command: {command}\n  Run 'fluentorm migrations --help' for a list of commands.")
         };
     }
@@ -295,7 +317,7 @@ internal static class Program
             catch (MigrationTamperedWithException ex)
             {
                 PrintError(ex.Message);
-                exitCode = 1;
+                exitCode = 3;
             }
         }
 
@@ -332,24 +354,44 @@ internal static class Program
     // ── scaffold ──────────────────────────────────────────────────────────────
 
     private static async Task<int> RunScaffoldAsync(
-        ScaffoldGenerator? generator, string[] positional, Dictionary<string, string> opts)
+        ScaffoldGenerator? dbGenerator, EntityMapRegistry? registry,
+        CliConfig config, string[] positional, Dictionary<string, string> opts)
     {
-        if (generator is null)
-            return ErrorExit(
-                "Scaffold requires entity types to inspect for drift.\n" +
-                "  Use --assembly <path> to load an assembly with [Table] entities.");
-
-        var desc = positional.FirstOrDefault()
-            ?? opts.GetValueOrDefault("name")
-            ?? "auto_migration";
+        var desc   = positional.FirstOrDefault() ?? opts.GetValueOrDefault("name") ?? "auto_migration";
         var dryRun = opts.ContainsKey("dry-run");
         var outDir = opts.GetValueOrDefault("output") ?? Directory.GetCurrentDirectory();
+        var noSnap = opts.ContainsKey("no-snapshot");
 
-        Console.WriteLine($"  Detecting schema drift and generating migration for: {desc}");
+        // ── Snapshot mode (default, no live DB needed) ────────────────────────
+        if (!noSnap && registry != null)
+        {
+            var scaffolder = new SnapshotScaffolder(registry);
+
+            if (!dryRun && !SnapshotScaffolder.SnapshotExists(outDir))
+                Console.WriteLine($"  No snapshot found — initialising from current model...");
+            else if (dryRun)
+                Console.WriteLine($"  (dry-run — no files will be written)");
+            else
+                Console.WriteLine($"  Diffing model against snapshot for: {desc}");
+
+            var result = await scaffolder.ScaffoldAsync(
+                desc, outDir, dryRun, config.MigrationsNamespace);
+            Console.WriteLine(result);
+            return 0;
+        }
+
+        // ── Fallback: live DB drift detection ─────────────────────────────────
+        if (dbGenerator is null)
+            return ErrorExit(
+                "Scaffold requires an assembly with [Table] entities.\n" +
+                "  Use --assembly <path>   to load your compiled project.\n" +
+                "  Use --no-snapshot       to force live-DB drift detection (requires --connection).");
+
+        Console.WriteLine($"  Detecting schema drift against live DB for: {desc}");
         if (dryRun) Console.WriteLine("  (dry-run — no file will be written)");
 
-        var result = await generator.GenerateAsync(desc, dryRun ? null : outDir, dryRun);
-        Console.WriteLine(result);
+        var dbResult = await dbGenerator.GenerateAsync(desc, dryRun ? null : outDir, dryRun);
+        Console.WriteLine(dbResult);
         return 0;
     }
 
@@ -412,6 +454,17 @@ internal static class Program
 
     // ── Engine wiring ─────────────────────────────────────────────────────────
 
+    private static EntityMapRegistry BuildRegistry(List<Assembly> assemblies)
+    {
+        var registry = new EntityMapRegistry();
+        foreach (var asm in assemblies)
+        {
+            try { registry.ScanAssembly(asm); }
+            catch { /* non-critical: assembly may have no [Table] types */ }
+        }
+        return registry;
+    }
+
     private static (MigrationEngine? engine, SchemaDriftDetector? detector, ScaffoldGenerator? generator)
         BuildEngine(CliConfig config)
     {
@@ -435,12 +488,7 @@ internal static class Program
         }
 
         var assemblies = LoadAssemblies(config.Assembly);
-        var registry = new EntityMapRegistry();
-        foreach (var asm in assemblies)
-        {
-            try { registry.ScanAssembly(asm); }
-            catch { /* non-critical: assembly may have no [Table] types */ }
-        }
+        var registry   = BuildRegistry(assemblies);
 
         var engine    = new MigrationEngine(factory, dialect, registry, assemblies);
         var detector  = new SchemaDriftDetector(factory, dialect, registry);
@@ -558,9 +606,20 @@ internal static class Program
         try
         {
             var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<CliConfig>(json,
-                       new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                   ?? new CliConfig();
+            var cfg = JsonSerializer.Deserialize<CliConfig>(json,
+                          new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                      ?? new CliConfig();
+
+            // Resolve relative paths in the config file against the config file's own directory,
+            // so a config in /project/fluentorm.json with assembly "./bin/..." works regardless
+            // of where the user invokes the tool from.
+            if (!string.IsNullOrWhiteSpace(cfg.Assembly) && !Path.IsPathRooted(cfg.Assembly))
+            {
+                var configDir = Path.GetDirectoryName(Path.GetFullPath(path))!;
+                cfg.Assembly = Path.GetFullPath(Path.Combine(configDir, cfg.Assembly));
+            }
+
+            return cfg;
         }
         catch (Exception ex)
         {
@@ -742,9 +801,10 @@ internal static class Program
             Code generation:
               new <description>             Create a blank migration file from a template
               new --output <dir>            Write file to a specific directory (default: CWD)
-              scaffold <description>        Generate a migration file from detected drift
-              scaffold --dry-run            Preview scaffold output without writing a file
-              scaffold --output <dir>       Write scaffold output to a specific directory
+              scaffold <description>        Auto-generate a migration from model changes (no DB needed)
+              scaffold --dry-run            Preview scaffold output without writing any files
+              scaffold --output <dir>       Write migration and snapshot to a specific directory
+              scaffold --no-snapshot        Fall back to live-DB drift detection (requires --connection)
 
             Examples:
               fluentorm init

@@ -115,6 +115,9 @@ public sealed class SchemaDriftDetector
                 }
                 else if (dbCol != null)
                 {
+                    // SQLite always reports INTEGER PRIMARY KEY as nullable in PRAGMA table_info
+                    if (col.IsPrimaryKey) continue;
+
                     // Check nullability
                     var cSharpNotNull = col.IsNotNull;
                     var dbNotNull = dbCol.IsNotNull;

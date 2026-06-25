@@ -61,26 +61,32 @@ This creates `fluentorm.json`:
 
 Edit the four values to match your project, then every command below picks up the config automatically — no flags needed.
 
-**2. Create your first migration:**
+**2. Build your project, then scaffold your first migration:**
 
 ```bash
 dotnet build
-fluentorm migrations new create_users_table --output ./Migrations
+fluentorm migrations scaffold create_initial_schema --output ./Migrations
 ```
 
-Edit the generated file, then rebuild:
+On the very first run, no migration is generated — the tool creates an initial snapshot (`_FluentORM_Snapshot.json`) of your current entities.
+
+**3. Now change an entity class, rebuild, and scaffold again:**
 
 ```bash
+# (edit an entity, e.g. add a property)
 dotnet build
+fluentorm migrations scaffold add_my_new_column --output ./Migrations
 ```
 
-**3. Check what will run:**
+This time the tool diffs the current model against the snapshot and generates a migration file. Review it before applying.
+
+**4. Check what will run:**
 
 ```bash
 fluentorm migrations preview
 ```
 
-**4. Apply it:**
+**5. Apply it:**
 
 ```bash
 fluentorm migrations apply
@@ -93,7 +99,7 @@ fluentorm migrations apply
 The tool loads your compiled `.dll` at runtime via reflection. It discovers:
 
 - **Migration classes** — any class that inherits `Migration` and has a `[Migration(version, description)]` attribute.
-- **Entity classes** — any class with a `[Table("...")]` attribute (used for schema drift detection and scaffolding).
+- **Entity classes** — any class with a `[Table("...")]` attribute (used for auto-scaffolding).
 
 **Important:** you must `dotnet build` your project before running the tool. The tool reads the `.dll`, not `.cs` source files.
 
@@ -102,6 +108,20 @@ The tool loads your compiled `.dll` at runtime via reflection. It discovers:
 ```
 Add/change entity or migration  →  dotnet build  →  fluentorm migrations <command>
 ```
+
+### How auto-scaffold works (no database required)
+
+`fluentorm migrations scaffold` works entirely from your C# entity classes — no live database connection needed. It uses a **model snapshot** file (`_FluentORM_Snapshot.json`) stored alongside your migration files:
+
+1. **First run** — no snapshot exists yet. The tool creates an initial snapshot from your current entities and tells you what it captured. No migration file is generated on the first run.
+2. **Subsequent runs** — the tool loads the snapshot, compares it against your current entity classes, generates a migration for everything that changed, and updates the snapshot.
+
+```
+First run   →  creates _FluentORM_Snapshot.json  (no migration yet)
+Change entity  →  dotnet build  →  scaffold  →  migration generated  →  snapshot updated
+```
+
+The snapshot file should be committed to source control alongside your migration files. It acts as the "last known state" baseline for the next scaffold.
 
 ---
 
@@ -354,20 +374,49 @@ Version numbers are timestamp-based (`yyyyMMddNNN`). If you create multiple migr
 
 ### `migrations scaffold`
 
-Automatically generates a migration file by detecting schema drift between your C# entities and the database. Useful when you've added or changed entity classes and want a migration generated for you.
+Automatically generates a migration file by comparing your current C# entity classes against a stored model snapshot. **No database connection is required.**
 
 ```bash
-# Generate and write to current directory
-fluentorm migrations scaffold add_new_entity_columns
+# First run — creates the initial snapshot (no migration generated yet)
+fluentorm migrations scaffold initial --output ./Migrations
 
-# Preview what would be generated without writing a file
-fluentorm migrations scaffold add_new_entity_columns --dry-run
+# Subsequent runs — generates a migration for any entity changes
+fluentorm migrations scaffold add_new_entity_columns --output ./Migrations
 
-# Write to a specific directory
-fluentorm migrations scaffold add_new_entity_columns --output ./src/Migrations
+# Preview the migration that would be generated without writing any files
+fluentorm migrations scaffold add_new_entity_columns --output ./Migrations --dry-run
+
+# Override the namespace used in the generated file
+fluentorm migrations scaffold add_fields_table --output ./Migrations --namespace MyApp.Data.Migrations
 ```
 
-> Always review the generated file before applying. Scaffold output is a starting point, not a final answer — especially for destructive operations.
+#### The snapshot file
+
+On first run, the tool writes `_FluentORM_Snapshot.json` to the output directory. This file records the shape of every entity at the time of last scaffold. **Commit it to source control** — it is the baseline for every future scaffold.
+
+```
+./Migrations/
+  _FluentORM_Snapshot.json          ← commit this
+  Migration_20240601001_Initial.cs  ← commit this
+  Migration_20240618001_AddPhone.cs ← commit this
+```
+
+#### What changes are detected
+
+| Entity change | Generated code |
+|---|---|
+| New entity class | `schema.CreateTable<T>(...)` |
+| Removed entity class | `schema.DropTable<T>()` ⚠ destructive |
+| New property | `schema.AddColumn<T>(x => x.Prop)...` |
+| Removed property | `schema.DropColumn<T>(x => x.Prop)` ⚠ destructive |
+| Nullability changed | `schema.AlterColumn<T>(x => x.Prop).NotNull()` |
+| MaxLength changed | `schema.AlterColumn<T>(x => x.Prop).MaxLength(n)` |
+| New `[Index]` attribute | `schema.AddIndex<T>(x => x.Prop)` |
+| Removed `[Index]` attribute | `schema.DropIndex<T>("name")` |
+
+Destructive changes are flagged with `[Destructive("...")]` in the generated file and require `--allow-destructive` when applied.
+
+> Always review the generated file before applying. Scaffold output is a starting point, not a final answer.
 
 ---
 
@@ -499,10 +548,13 @@ public override void Down(SchemaBuilder schema)
 # 2. Rebuild
 dotnet build
 
-# 3a. Let the tool generate the migration for you
+# 3a. Auto-generate the migration from your entity changes (no DB needed)
 fluentorm migrations scaffold describe_your_change --output ./Migrations
 
-# 3b. Or write it yourself from a blank template
+# 3b. Or preview first without writing any files
+fluentorm migrations scaffold describe_your_change --output ./Migrations --dry-run
+
+# 3c. Or write a blank template yourself
 fluentorm migrations new describe_your_change --output ./Migrations
 
 # 4. Review the generated file, edit as needed, rebuild
@@ -564,13 +616,17 @@ If there's a mismatch the tool will warn you and migration type discovery may fa
 
 ## SQLite Notes
 
-SQLite has limited `ALTER TABLE` support. Some operations are rendered as no-ops with a comment explaining a manual table-rebuild is required:
+SQLite has limited `ALTER TABLE` support. Some schema operations are rendered as SQL comments (no-ops) with guidance on a manual table rebuild:
 
-- `DropColumn` — not supported directly in SQLite < 3.35
-- `DropForeignKey` — requires table rebuild
-- `AlterColumn` (nullability changes) — requires table rebuild
+| Operation | SQLite behaviour |
+|---|---|
+| `DropColumn` | No-op comment — SQLite 3.35+ supports it natively, but FluentORM currently does not emit it |
+| `DropForeignKey` | No-op comment — requires full table rebuild |
+| `AlterColumn` nullability | No-op comment — requires full table rebuild |
 
-These operations work fully on SQL Server. For SQLite, the generated comments will guide you on how to perform the rebuild manually if needed.
+These operations work fully on SQL Server.
+
+**Important for rollbacks on SQLite:** if a migration's `Up()` adds a column and the `Down()` drops it, the rollback will record in `__FluentMigrations` that the migration was rolled back — but the column will still be present in the database because `DropColumn` is a no-op. If you then re-apply the migration it will fail with "duplicate column name". To recover, either delete and recreate the SQLite database, or manually drop the column with `sqlite3` / a table rebuild.
 
 ---
 
@@ -630,7 +686,15 @@ RUN dotnet fluentorm migrations apply
 
 **Q: What does `scaffold` do that `new` doesn't?**
 
-`new` creates a blank file. `scaffold` connects to the database, compares your C# entity classes against the actual schema, and writes a migration with the necessary `AddColumn`, `CreateTable`, etc. calls pre-filled in. You still review and edit before applying.
+`new` creates a blank file you fill in yourself. `scaffold` compares your current C# entity classes against a stored model snapshot (`_FluentORM_Snapshot.json`) and writes the migration with the necessary `AddColumn`, `CreateTable`, etc. calls already filled in. No database connection required — it works purely from your compiled assembly. You still review and can edit the file before applying.
+
+**Q: When should I use `scaffold` vs `new`?**
+
+Use `scaffold` for the typical case: you changed an entity class and want the migration auto-generated. Use `new` when writing a migration that can't be derived from entity shape — raw SQL data transformations, renaming columns, custom indexes, seeding data, etc.
+
+**Q: What is `_FluentORM_Snapshot.json` and should I commit it?**
+
+Yes, commit it. It is the "last known model state" used by `scaffold` to detect what changed since the last migration was generated. Without it, scaffold can't produce a diff — it would just re-create the initial snapshot. Keep it alongside your migration files in source control.
 
 **Q: Where should I put my migration files?**
 
