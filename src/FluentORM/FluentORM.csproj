@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
 	<TargetFramework>net8.0</TargetFramework>
 	<LangVersion>12</LangVersion>
@@ -7,7 +7,7 @@
 
 	<!-- NuGet Package Metadata -->
 	<PackageId>FluentORM.Complete</PackageId>
-	<Version>1.0.1</Version>
+	<Version>1.0.2</Version>
 	<Authors>Marinus Maurice</Authors>
 	<Description>A complete fluent, type-safe ORM for .NET with support for SQLite and SQL Server, including database migrations and schema management</Description>
 	<PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>

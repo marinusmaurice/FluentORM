@@ -608,7 +608,7 @@ The tool ships with a specific version of `FluentORM.Migrations`. Your project s
 
 | Tool version | FluentORM.Migrations version |
 |---|---|
-| 1.0.1 | 1.0.1 |
+| 1.0.2 | 1.0.2 |
 
 If there's a mismatch the tool will warn you and migration type discovery may fail. Use `dotnet tool update -g FluentORM.Tools` to align versions.
 

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -14,9 +14,9 @@
 
     <!-- NuGet metadata -->
     <PackageId>FluentORM.Tools</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>Marinus Maurice</Authors>
-    <Description>FluentORM CLI — standalone migration tool. Apply, rollback, preview, scaffold, and validate database migrations for any project using FluentORM.Migrations.</Description>
+    <Description>FluentORM CLI â€” standalone migration tool. Apply, rollback, preview, scaffold, and validate database migrations for any project using FluentORM.Migrations.</Description>
     <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/marinusmaurice/FluentORM</RepositoryUrl>
@@ -26,7 +26,7 @@
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Bundled at pack time — the tool ships with all FluentORM libraries it needs -->
+    <!-- Bundled at pack time â€” the tool ships with all FluentORM libraries it needs -->
     <ProjectReference Include="..\FluentORM.Migrations\FluentORM.Migrations.csproj" />
     <ProjectReference Include="..\FluentORM.Sqlite\FluentORM.Sqlite.csproj" />
     <ProjectReference Include="..\FluentORM.SqlServer\FluentORM.SqlServer.csproj" />

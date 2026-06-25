@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>12</LangVersion>
@@ -9,7 +9,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>FluentORM.Testing</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>Marinus Maurice</Authors>
     <Description>Testing utilities for FluentORM including in-memory SQLite database helpers</Description>
     <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>

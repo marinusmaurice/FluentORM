@@ -9,7 +9,7 @@
 
     <!-- NuGet Package Metadata -->
     <PackageId>FluentORM.Migrations</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.0.2</Version>
     <Authors>Marinus Maurice</Authors>
     <Description>Database migration engine for FluentORM with schema management and drift detection</Description>
     <PackageProjectUrl>https://github.com/marinusmaurice/FluentORM</PackageProjectUrl>
