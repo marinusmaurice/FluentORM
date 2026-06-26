@@ -1,0 +1,39 @@
+title: FluentORM
+description: A fast, expressive .NET ORM for SQLite and SQL Server
+theme: just-the-docs
+
+url: https://marinusmaurice.github.io
+baseurl: /FluentORM
+
+aux_links:
+  "GitHub":
+    - "https://github.com/marinusmaurice/FluentORM"
+  "NuGet":
+    - "https://www.nuget.org/packages/FluentORM"
+
+aux_links_new_tab: true
+
+nav_sort: order
+
+color_scheme: light
+
+footer_content: "FluentORM &copy; 2024 Maurice Marinus. MIT License."
+
+search_enabled: true
+search:
+  heading_level: 3
+
+callouts_level: quiet
+callouts:
+  highlight:
+    title: Note
+    color: yellow
+  important:
+    title: Important
+    color: blue
+  new:
+    title: New
+    color: green
+  warning:
+    title: Warning
+    color: red
