@@ -4,6 +4,25 @@
     <Project Path="demos/FluentORM.MigrationsSample/FluentORM.MigrationsSample.csproj" />
     <Project Path="demos/FluentORM.SqlServerDemo/FluentORM.SqlServerDemo.csproj" />
   </Folder>
+  <Folder Name="/docs/">
+    <File Path="docs/advanced.md" />
+    <File Path="docs/auto-scaffold.md" />
+    <File Path="docs/cli.md" />
+    <File Path="docs/comparisons.md" />
+    <File Path="docs/crud.md" />
+    <File Path="docs/entity-mapping.md" />
+    <File Path="docs/FluentORM_Internal_Architecture.docx" />
+    <File Path="docs/FluentORM_Migration_Spec.docx" />
+    <File Path="docs/FluentORM_Specification.docx" />
+    <File Path="docs/Gemfile" />
+    <File Path="docs/getting-started.md" />
+    <File Path="docs/index.md" />
+    <File Path="docs/migrations.md" />
+    <File Path="docs/querying.md" />
+    <File Path="docs/testing.md" />
+    <File Path="docs/transactions.md" />
+    <File Path="docs/_config.yml" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/FluentORM.Core/FluentORM.Core.csproj" />
     <Project Path="src/FluentORM.Migrations/FluentORM.Migrations.csproj" />

@@ -9,7 +9,7 @@ aux_links:
   "GitHub":
     - "https://github.com/marinusmaurice/FluentORM"
   "NuGet":
-    - "https://www.nuget.org/packages/FluentORM"
+    - "https://www.nuget.org/packages/FluentORM.Complete"
 
 aux_links_new_tab: true
 
